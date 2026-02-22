@@ -127,12 +127,14 @@ def preprocess(df: pd.DataFrame) -> pd.DataFrame:
         X["pay_quarterly"] = (X["Payment_Schedule"] == "Quarterly_Invoice").astype(int)
 
     # ── Other flags ──────────────────────────────────────────────────
-    X["was_cancelled"] = (
-        pd.to_numeric(X.get("Policy_Cancelled_Post_Purchase", 0), errors="coerce")
-        .fillna(0)
-        .astype(int)
-    )
-    grace = pd.to_numeric(X.get("Grace_Period_Extensions", 0), errors="coerce").fillna(0)
+    if "Policy_Cancelled_Post_Purchase" in X.columns:
+        X["was_cancelled"] = pd.to_numeric(X["Policy_Cancelled_Post_Purchase"], errors="coerce").fillna(0).astype(int)
+    else:
+        X["was_cancelled"] = 0
+    if "Grace_Period_Extensions" in X.columns:
+        grace = pd.to_numeric(X["Grace_Period_Extensions"], errors="coerce").fillna(0)
+    else:
+        grace = 0
     X["ext_ratio"] = grace / (dur + 1)
 
     # ── Categorical dtype ────────────────────────────────────────────
