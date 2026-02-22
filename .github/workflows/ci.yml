@@ -183,7 +183,7 @@ jobs:
           print(f'  uncertainty level: {unc.get(\"level\")}')
           assert len(av) == 4, f'Expected 4 agent_votes, got {len(av)}'
           assert len(nar.get('decision_timeline', [])) > 0, 'Empty decision_timeline'
-          assert unc.get('level') in ('Low','Moderate','High'), f'Bad uncertainty: {unc}'
+          assert unc.get('level') in ('low','medium','high'), f'Bad uncertainty: {unc}'
           print(f'✓ POST /explain → {len(d[\"top_influences\"])} influences, {d[\"agent_consensus\"][\"agreement\"]}/4 agree')
 
           # 4) Simulate
