@@ -1,9 +1,15 @@
 """OLEA AI — Insurance Bundle Prediction API (Phase II)."""
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+from fastapi.routing import APIRouter
+from fastapi.staticfiles import StaticFiles
 
 from core.agents import agent_panel
 from core.bundle_space import bundle_space
@@ -36,6 +42,14 @@ app = FastAPI(
     description="Insurance coverage bundle prediction API",
     version="2.0.0",
     lifespan=lifespan,
+)
+
+# ── CORS (allow frontend dev server) ────────────────────────────────
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173", "http://127.0.0.1:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
 )
 
 
@@ -78,3 +92,26 @@ async def simulate(req: SimulateRequest):
     base_raw = req.base.model_dump()
     result = run_simulation(base_raw, req.changes, model)
     return result
+
+
+# ── /api/* mirror (so frontend /api/explain works in production too) ─
+api_router = APIRouter(prefix="/api")
+api_router.add_api_route("/health", health, methods=["GET"])
+api_router.add_api_route("/predict", predict, methods=["POST"])
+api_router.add_api_route("/explain", explain, methods=["POST"])
+api_router.add_api_route("/simulate", simulate, methods=["POST"])
+app.include_router(api_router)
+
+
+# ── Serve frontend in production (Docker build copies dist → static/) ─
+STATIC_DIR = Path(__file__).parent / "static"
+if STATIC_DIR.is_dir():
+    app.mount("/assets", StaticFiles(directory=STATIC_DIR / "assets"), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        """Catch-all: serve index.html for any non-API route (SPA routing)."""
+        file = STATIC_DIR / full_path
+        if file.is_file():
+            return FileResponse(file)
+        return FileResponse(STATIC_DIR / "index.html")

@@ -14,8 +14,8 @@ frontend/dist/
 frontend/.env
 
 # Data & Model
-*.csv
-*.pkl
+# *.csv and *.pkl tracked for deployment (model.pkl + train.csv needed at runtime)
+test.csv
 
 # IDE
 .vscode/

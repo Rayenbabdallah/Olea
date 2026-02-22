@@ -1,0 +1,180 @@
+name: OLEA AI — CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # ─── Backend: lint + smoke test ───────────────────────────────────
+  backend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: pip-
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt scikit-learn requests
+
+      - name: Lint — syntax check all Python files
+        run: python -m py_compile app.py && python -m py_compile core/model.py && python -m py_compile core/preprocess.py && python -m py_compile core/agents.py && python -m py_compile core/explain.py && python -m py_compile core/simulate.py && python -m py_compile core/schemas.py
+
+      - name: Smoke test — model loads and predicts
+        run: |
+          python -c "
+          from core.model import model
+          model.load()
+          assert model.is_loaded, 'Model failed to load'
+          result = model.predict({
+            'Policy_Start_Year':2016,'Policy_Start_Month':'February',
+            'Policy_Start_Week':8,'Policy_Start_Day':15,
+            'Grace_Period_Extensions':1,'Previous_Policy_Duration_Months':12,
+            'Adult_Dependents':1,'Child_Dependents':2,'Infant_Dependents':0,
+            'Region_Code':'ZAF','Existing_Policyholder':1,
+            'Previous_Claims_Filed':1,'Years_Without_Claims':3,
+            'Policy_Amendments_Count':2,'Underwriting_Processing_Days':14,
+            'Vehicles_on_Policy':1,'Custom_Riders_Requested':1,
+            'Broker_Agency_Type':'Urban_Boutique','Deductible_Tier':'Tier_3_Low_Ded',
+            'Acquisition_Channel':'Direct_Website','Payment_Schedule':'Monthly_EFT',
+            'Employment_Status':'Self_Employed','Estimated_Annual_Income':55000,
+            'Days_Since_Quote':5
+          })
+          assert 0 <= result['predicted_bundle'] <= 9
+          assert 0 < result['confidence'] <= 1
+          assert len(result['probabilities']) == 10
+          print(f'✓ Prediction: bundle {result[\"predicted_bundle\"]} ({result[\"confidence\"]:.1%})')
+          "
+
+  # ─── Frontend: lint + build ───────────────────────────────────────
+  frontend:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Cache npm packages
+        uses: actions/cache@v4
+        with:
+          path: frontend/node_modules
+          key: npm-${{ hashFiles('frontend/package-lock.json') }}
+          restore-keys: npm-
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: TypeScript lint
+        run: npx tsc --noEmit
+
+      - name: Production build
+        run: npm run build
+
+      - name: Verify build output
+        run: |
+          test -f dist/index.html && echo "✓ index.html exists"
+          ls -lh dist/assets/ | head -5
+
+  # ─── Integration: full API test ───────────────────────────────────
+  integration:
+    runs-on: ubuntu-latest
+    needs: [backend, frontend]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.10
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+
+      - name: Cache pip packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: pip-${{ hashFiles('backend/requirements.txt') }}
+          restore-keys: pip-
+
+      - name: Install dependencies
+        run: pip install -r backend/requirements.txt requests
+
+      - name: Start server & run integration tests
+        run: |
+          cd backend
+          python -m uvicorn app:app --host 127.0.0.1 --port 8000 &
+          sleep 15  # wait for model + agent training
+
+          python -c "
+          import requests, json, sys
+
+          BASE = 'http://127.0.0.1:8000'
+          SAMPLE = {
+            'Policy_Start_Year':2016,'Policy_Start_Month':'February',
+            'Policy_Start_Week':8,'Policy_Start_Day':15,
+            'Grace_Period_Extensions':1,'Previous_Policy_Duration_Months':12,
+            'Adult_Dependents':1,'Child_Dependents':2,'Infant_Dependents':0,
+            'Region_Code':'ZAF','Existing_Policyholder':1,
+            'Previous_Claims_Filed':1,'Years_Without_Claims':3,
+            'Policy_Amendments_Count':2,'Underwriting_Processing_Days':14,
+            'Vehicles_on_Policy':1,'Custom_Riders_Requested':1,
+            'Broker_Agency_Type':'Urban_Boutique','Deductible_Tier':'Tier_3_Low_Ded',
+            'Acquisition_Channel':'Direct_Website','Payment_Schedule':'Monthly_EFT',
+            'Employment_Status':'Self_Employed','Estimated_Annual_Income':55000,
+            'Days_Since_Quote':5
+          }
+
+          # 1) Health
+          r = requests.get(f'{BASE}/health')
+          assert r.status_code == 200
+          assert r.json()['model_loaded'] == True
+          print('✓ GET /health')
+
+          # 2) Predict
+          r = requests.post(f'{BASE}/predict', json=SAMPLE)
+          assert r.status_code == 200
+          d = r.json()
+          assert 0 <= d['predicted_bundle'] <= 9
+          assert len(d['probabilities']) == 10
+          print(f'✓ POST /predict → {d[\"bundle_name\"]} ({d[\"confidence\"]:.1%})')
+
+          # 3) Explain
+          r = requests.post(f'{BASE}/explain', json=SAMPLE)
+          assert r.status_code == 200
+          d = r.json()
+          assert len(d['agent_votes']) == 4
+          assert len(d['narrative']['decision_timeline']) > 0
+          assert d['uncertainty']['level'] in ('Low','Moderate','High')
+          print(f'✓ POST /explain → {len(d[\"top_influences\"])} influences, {d[\"agent_consensus\"][\"agreement\"]}/4 agree')
+
+          # 4) Simulate
+          r = requests.post(f'{BASE}/simulate', json={
+            'base': SAMPLE,
+            'changes': {'Estimated_Annual_Income': 120000}
+          })
+          assert r.status_code == 200
+          d = r.json()
+          assert 'base' in d and 'modified' in d and 'delta' in d
+          print(f'✓ POST /simulate → bundle_changed={d[\"delta\"][\"bundle_changed\"]}')
+
+          print()
+          print('═══ All 4 endpoints passed ═══')
+          "
