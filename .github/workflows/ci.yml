@@ -173,12 +173,15 @@ jobs:
 
           # 3) Explain
           r = requests.post(f'{BASE}/explain', json=SAMPLE)
-          assert r.status_code == 200
+          assert r.status_code == 200, f'Explain status: {r.status_code}'
           d = r.json()
-          assert len(d['agent_votes']) == 4
-          assert len(d['narrative']['decision_timeline']) > 0
-          assert d['uncertainty']['level'] in ('Low','Moderate','High')
-          print(f'✓ POST /explain → {len(d[\"top_influences\"])} influences, {d[\"agent_consensus\"][\"agreement\"]}/4 agree')
+          print(f'  agent_votes count: {len(d.get("agent_votes", []))}')
+          print(f'  narrative keys: {list(d.get("narrative", {}).keys())}')
+          print(f'  uncertainty level: {d.get("uncertainty", {}).get("level")}')
+          assert len(d.get('agent_votes', [])) == 4, f'Expected 4 agent_votes, got {len(d.get("agent_votes", []))}: {d.get("agent_votes")}'
+          assert len(d.get('narrative', {}).get('decision_timeline', [])) > 0, f'Empty decision_timeline: {d.get("narrative")}'
+          assert d.get('uncertainty', {}).get('level') in ('Low','Moderate','High'), f'Bad uncertainty level: {d.get("uncertainty")}'
+          print(f'✓ POST /explain → {len(d["top_influences"])} influences, {d["agent_consensus"]["agreement"]}/4 agree')
 
           # 4) Simulate
           r = requests.post(f'{BASE}/simulate', json={
