@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import threading
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -28,12 +29,18 @@ from core.schemas import (
 from core.simulate import run_simulation
 
 
-# ── Startup / shutdown ───────────────────────────────────────────────
-@asynccontextmanager
-async def lifespan(app: FastAPI):
+# ── Background model loading (so uvicorn binds port immediately) ─────
+def _init_models():
+    """Heavy init in background thread — port stays open while loading."""
     model.load()
     bundle_space.build()
-    agent_panel.train()   # multi-agent prediction layer
+    agent_panel.train()
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    thread = threading.Thread(target=_init_models, daemon=True)
+    thread.start()
     yield
 
 
