@@ -175,13 +175,16 @@ jobs:
           r = requests.post(f'{BASE}/explain', json=SAMPLE)
           assert r.status_code == 200, f'Explain status: {r.status_code}'
           d = r.json()
-          print(f'  agent_votes count: {len(d.get("agent_votes", []))}')
-          print(f'  narrative keys: {list(d.get("narrative", {}).keys())}')
-          print(f'  uncertainty level: {d.get("uncertainty", {}).get("level")}')
-          assert len(d.get('agent_votes', [])) == 4, f'Expected 4 agent_votes, got {len(d.get("agent_votes", []))}: {d.get("agent_votes")}'
-          assert len(d.get('narrative', {}).get('decision_timeline', [])) > 0, f'Empty decision_timeline: {d.get("narrative")}'
-          assert d.get('uncertainty', {}).get('level') in ('Low','Moderate','High'), f'Bad uncertainty level: {d.get("uncertainty")}'
-          print(f'✓ POST /explain → {len(d["top_influences"])} influences, {d["agent_consensus"]["agreement"]}/4 agree')
+          av = d.get('agent_votes', [])
+          nar = d.get('narrative', {})
+          unc = d.get('uncertainty', {})
+          print(f'  agent_votes count: {len(av)}')
+          print(f'  narrative keys: {list(nar.keys())}')
+          print(f'  uncertainty level: {unc.get(\"level\")}')
+          assert len(av) == 4, f'Expected 4 agent_votes, got {len(av)}'
+          assert len(nar.get('decision_timeline', [])) > 0, 'Empty decision_timeline'
+          assert unc.get('level') in ('Low','Moderate','High'), f'Bad uncertainty: {unc}'
+          print(f'✓ POST /explain → {len(d[\"top_influences\"])} influences, {d[\"agent_consensus\"][\"agreement\"]}/4 agree')
 
           # 4) Simulate
           r = requests.post(f'{BASE}/simulate', json={
