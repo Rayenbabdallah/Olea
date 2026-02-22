@@ -63,7 +63,11 @@ app.add_middleware(
 # ── Routes ───────────────────────────────────────────────────────────
 @app.get("/health", response_model=HealthResponse)
 async def health():
-    return HealthResponse(status="ok", model_loaded=model.is_loaded)
+    return HealthResponse(
+        status="ok",
+        model_loaded=model.is_loaded,
+        agents_ready=agent_panel.is_ready,
+    )
 
 
 @app.post("/predict", response_model=PredictResponse)

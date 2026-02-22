@@ -77,6 +77,7 @@ class PredictResponse(BaseModel):
 class HealthResponse(BaseModel):
     status: str = "ok"
     model_loaded: bool
+    agents_ready: bool = False
 
 
 # ═══════════════════════════════════════════════════════════════════════

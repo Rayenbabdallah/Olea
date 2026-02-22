@@ -121,7 +121,22 @@ jobs:
         run: |
           cd backend
           python -m uvicorn app:app --host 127.0.0.1 --port 8000 &
-          sleep 15  # wait for model + agent training
+
+          # Poll until server is fully ready (model + agents)
+          python -c "
+          import requests, time, sys
+          for i in range(120):
+              try:
+                  r = requests.get('http://127.0.0.1:8000/health', timeout=2)
+                  h = r.json()
+                  if h.get('model_loaded') and h.get('agents_ready'):
+                      print(f'Server fully ready after {i+1}s'); break
+              except Exception:
+                  pass
+              time.sleep(1)
+          else:
+              print('ERROR: server not ready after 120s'); sys.exit(1)
+          "
 
           python -c "
           import requests, json, sys
